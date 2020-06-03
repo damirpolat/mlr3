@@ -73,8 +73,8 @@ resample = function(task, learner, resampling, store_models = FALSE) {
     future.globals = FALSE, future.scheduling = structure(TRUE, ordering = "random"),
     future.packages = "mlr3", future.seed = TRUE
   )
-  res = map_dtr(res, reassemble, learner = learner)
-  res[, c("task", "resampling", "iteration") := list(list(task), list(instance), seq_len(n))]
+  # res = map_dtr(res, reassemble, learner = learner)
 
-  ResampleResult$new(res)
+  ResampleResult$new(task = task, learner = learner, resampling = instance,
+    states = map(res, "learner_state"), prediction = map(res, "prediction"))
 }

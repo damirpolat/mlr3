@@ -33,31 +33,35 @@
 #' rr$errors
 ResampleResult = R6Class("ResampleResult",
   public = list(
-    #' @field data ([data.table::data.table()])\cr
-    #'   Internal data storage.
-    #'   We discourage users to directly work with this field.
-    data = NULL,
-
     #' @description
     #' Creates a new instance of this [R6][R6::R6Class] class.
     #'
-    #' @param data ([data.table::data.table()])\cr
-    #'   Table with data for one resampling iteration per row:
-    #'   [Task], [Learner], [Resampling], iteration (`integer(1)`), and [Prediction].
-    #'
+    #' @param task ([Task])\cr
+    #'   Single task all learners are trained on.
+    #' @param Learner ([Learner])\cr
+    #'   Exemplary learner used to fit the individual learners.
+    #' @param resampling ([Resampling])\cr
+    #'   Instantiated resampling.
+    #'   Number of iterations must match the number of states
+    #' @param states (`list()`)\cr
+    #'   List of learner states (this includes the fitted models).
+    #' @param predictions (list of [Prediction])\cr
+    #'   list of prediction objects.
     #' @param uhash (`character(1)`)\cr
-    #'   Unique hash for this `ResampleResult`. If `NULL`, a new unique hash is generated.
+    #'   Unique hash for this `ResampleResult`. If `NULL`, a new unique hash is calculated.
     #'   This unique hash is primarily needed to group information in [BenchmarkResult]s.
-    initialize = function(data, uhash = NULL) {
-      assert_data_table(data)
-      slots = mlr_reflections$rr_names
-      assert_names(names(data), must.include = slots)
-      self$data = setcolorder(setcolorder(data, "iteration"), slots)[]
-      if (is.null(uhash)) {
-        private$.uhash = UUIDgenerate()
-      } else {
-        private$.uhash = assert_string(uhash)
-      }
+    initialize = function(task, learner, resampling, states, predictions, uhash = NULL) {
+      assert_task(task)
+      assert_learner(learner, task = task)
+      assert_resampling(resampling, instantiated = TRUE)
+      assert_list(states)
+      assert_list(predictions, len = length(states))
+      # assert_list(predictions, "Prediction", len = length(states))
+      uhash = if (is.null(uhash)) UUIDgenerate() else assert_string(uhash)
+
+      private$.data = list(
+        task = task, learner = learner, resampling = resampling, states = states, predictions = predictions, uhash = uhash
+      )
     },
 
     #' @description
@@ -70,9 +74,10 @@ ResampleResult = R6Class("ResampleResult",
     #' Printer.
     #' @param ... (ignored).
     print = function() {
-      catf("%s of %i iterations", format(self), nrow(self$data))
-      catf(str_indent("* Task:", self$task$id))
-      catf(str_indent("* Learner:", self$data$learner[[1L]]$id))
+      n = length(private$.data$states)
+      catf("%s of %i iterations", format(self), n)
+      catf(str_indent("* Task:", private$.data$task$id))
+      catf(str_indent("* Learner:", private$.data$learner$id))
 
       warnings = self$warnings
       catf(str_indent("* Warnings:", sprintf("%i in %i iterations", nrow(warnings), uniqueN(warnings, by = "iteration"))))
@@ -84,7 +89,7 @@ ResampleResult = R6Class("ResampleResult",
     #' @description
     #' Opens the corresponding help page referenced by field `$man`.
     help = function() {
-      open_help("mlr3::BenchmarkResult")
+      open_help("mlr3::ResampleResult")
     },
 
     #' @description
@@ -108,7 +113,7 @@ ResampleResult = R6Class("ResampleResult",
     #'   Subset of `{"train", "test"}`.
     #' @return List of [Prediction] objects, one per element in `predict_sets`.
     predictions = function(predict_sets = "test") {
-      map(self$data$prediction, function(li) {
+      map(private$.data$predictions, function(li) {
         do.call(c, li[predict_sets])
       })
     },
@@ -126,13 +131,14 @@ ResampleResult = R6Class("ResampleResult",
     #'
     #' @return [data.table::data.table()].
     score = function(measures = NULL, ids = TRUE) {
-      measures = as_measures(measures, task_type = self$task$task_type)
-      assert_measures(measures, task = self$task, learner = self$learners[[1L]])
+      task = self$task
+      measures = as_measures(measures, task_type = task$task_type)
+      assert_measures(measures, task = task, learner = private$.data$learner)
       assert_flag(ids)
-      tab = copy(self$data)
+      tab = self$data
 
       for (m in measures) {
-        set(tab, j = m$id, value = measure_score_data(m, self$data))
+        set(tab, j = m$id, value = measure_score_data(m, tab))
       }
 
       if (ids) {
@@ -150,7 +156,7 @@ ResampleResult = R6Class("ResampleResult",
     #' @return Named `numeric()`.
     aggregate = function(measures = NULL) {
       measures = as_measures(measures, task_type = self$task$task_type)
-      assert_measures(measures, task = self$task, learner = self$learners[[1L]])
+      assert_measures(measures, task = private$.data$task, learner = private$.data$learner)
       set_names(map_dbl(measures, function(m) m$aggregate(self)), ids(measures))
     },
 
@@ -165,43 +171,61 @@ ResampleResult = R6Class("ResampleResult",
     #' You need to explicitly `$clone()` the object beforehand if you want to keeps
     #' the object in its previous state.
     filter = function(iters) {
-      resampling = self$resampling
-      iters = assert_integerish(iters, min.len = 1L, lower = 1L, upper = resampling$iters, any.missing = FALSE, coerce = TRUE)
+      n = length(private$.data$states)
+      iters = unique(assert_integerish(iters, min.len = 1L, lower = 1L, upper = n, any.missing = FALSE, coerce = TRUE))
 
-      self$data = self$data[list(unique(iters)), on = "iteration"]
+      private$.data$states = private$.data$states[iters]
+      private$.data$predictions = private$.data$predictions[iters]
       invisible(self)
     }
   ),
 
   active = list(
+    #' @field data ([data.table::data.table()])\cr
+    #'   Tabular representation of stored data storage.
+    #'   We discourage users to directly work with this field.
+    data = function(rhs) {
+      assert_ro_binding(rhs)
+
+      data = private$.data
+      learners = self$learners
+      data.table(task = list(data$task), learner = learners, resampling = list(data$resampling), iteration = seq_along(learners), prediction = data$predictions)
+    },
+
     #' @field task ([Task])\cr
     #' The task [resample()] operated on.
     task = function(rhs) {
       assert_ro_binding(rhs)
-      self$data$task[[1L]]
+      private$.data$task
     },
 
     #' @field learners (list of [Learner])\cr
     #' List of trained learners, sorted by resampling iteration.
     learners = function(rhs) {
       assert_ro_binding(rhs)
-      self$data$learner
+
+      proto = private$.data$learner
+      lapply(private$.data$states, function(state) {
+        learner = proto$clone()
+        learner$state = state
+        learner
+      })
     },
 
     #' @field resampling ([Resampling])\cr
     #' Instantiated [Resampling] object which stores the splits into training and test.
     resampling = function(rhs) {
       assert_ro_binding(rhs)
-      self$data$resampling[[1L]]
+      private$.data$resampling
     },
 
     #' @field uhash (`character(1)`)\cr
     #' Unique hash for this object.
     uhash = function(rhs) {
       if (missing(rhs)) {
-        return(private$.uhash)
+        return(private$.data$uhash)
       }
-      private$.uhash = assert_string(rhs)
+      private$.data$uhash = assert_string(rhs)
     },
 
     #' @field warnings ([data.table::data.table()])\cr
@@ -210,8 +234,9 @@ ResampleResult = R6Class("ResampleResult",
     #' Note that there can be multiple rows per resampling iteration if multiple warnings have been recorded.
     warnings = function(rhs) {
       assert_ro_binding(rhs)
-      extract = function(learner) list(msg = learner$warnings)
-      rbindlist(map(self$data$learner, extract), idcol = "iteration", use.names = TRUE)
+
+      states = private$.data$states
+      rbindlist(map(states, "log"), idcol = "iteration", use.names = TRUE)[class == "warning"]
     },
 
     #' @field errors ([data.table::data.table()])\cr
@@ -220,23 +245,20 @@ ResampleResult = R6Class("ResampleResult",
     #' Note that there can be multiple rows per resampling iteration if multiple errors have been recorded.
     errors = function(rhs) {
       assert_ro_binding(rhs)
-      extract = function(learner) list(msg = learner$errors)
-      rbindlist(map(self$data$learner, extract), idcol = "iteration", use.names = TRUE)
+
+      states = private$.data$states
+      rbindlist(map(states, "log"), idcol = "iteration", use.names = TRUE)[class == "error"]
     }
   ),
 
   private = list(
-    .uhash = NULL,
-
-    deep_clone = function(name, value) {
-      if (name == "data") copy(value) else value
-    }
+    .data = NULL
   )
 )
 
 #' @export
 as.data.table.ResampleResult = function(x, ...) {
-  copy(x$data)
+  x$data
 }
 
 #' @export
