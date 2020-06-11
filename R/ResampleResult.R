@@ -38,7 +38,7 @@ ResampleResult = R6Class("ResampleResult",
     #'
     #' @param task ([Task])\cr
     #'   Single task all learners are trained on.
-    #' @param Learner ([Learner])\cr
+    #' @param learner ([Learner])\cr
     #'   Exemplary learner used to fit the individual learners.
     #' @param resampling ([Resampling])\cr
     #'   Instantiated resampling.

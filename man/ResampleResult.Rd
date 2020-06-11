@@ -34,18 +34,13 @@ rr$prediction()$confusion
 rr$warnings
 rr$errors
 }
-\section{Public fields}{
-\if{html}{\out{<div class="r6-fields">}}
-\describe{
-\item{\code{data}}{(\code{\link[data.table:data.table]{data.table::data.table()}})\cr
-Internal data storage.
-We discourage users to directly work with this field.}
-}
-\if{html}{\out{</div>}}
-}
 \section{Active bindings}{
 \if{html}{\out{<div class="r6-active-bindings">}}
 \describe{
+\item{\code{data}}{(\code{\link[data.table:data.table]{data.table::data.table()}})\cr
+Tabular representation of stored data storage.
+We discourage users to directly work with this field.}
+
 \item{\code{task}}{(\link{Task})\cr
 The task \code{\link[=resample]{resample()}} operated on.}
 
@@ -91,18 +86,37 @@ Note that there can be multiple rows per resampling iteration if multiple errors
 \subsection{Method \code{new()}}{
 Creates a new instance of this \link[R6:R6Class]{R6} class.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ResampleResult$new(data, uhash = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ResampleResult$new(
+  task,
+  learner,
+  resampling,
+  states,
+  predictions,
+  uhash = NULL
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{data}}{(\code{\link[data.table:data.table]{data.table::data.table()}})\cr
-Table with data for one resampling iteration per row:
-\link{Task}, \link{Learner}, \link{Resampling}, iteration (\code{integer(1)}), and \link{Prediction}.}
+\item{\code{task}}{(\link{Task})\cr
+Single task all learners are trained on.}
+
+\item{\code{learner}}{(\link{Learner})\cr
+Exemplary learner used to fit the individual learners.}
+
+\item{\code{resampling}}{(\link{Resampling})\cr
+Instantiated resampling.
+Number of iterations must match the number of states}
+
+\item{\code{states}}{(\code{list()})\cr
+List of learner states (this includes the fitted models).}
+
+\item{\code{predictions}}{(list of \link{Prediction})\cr
+list of prediction objects.}
 
 \item{\code{uhash}}{(\code{character(1)})\cr
-Unique hash for this \code{ResampleResult}. If \code{NULL}, a new unique hash is generated.
+Unique hash for this \code{ResampleResult}. If \code{NULL}, a new unique hash is calculated.
 This unique hash is primarily needed to group information in \link{BenchmarkResult}s.}
 }
 \if{html}{\out{</div>}}

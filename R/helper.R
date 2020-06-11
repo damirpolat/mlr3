@@ -40,3 +40,60 @@ replace_with = function(x, needle, replacement) {
   x = rep(x, 1L + (length(replacement) - 1L) * ii)
   replace(x, ii, replacement)
 }
+
+#' Concentrate a table of R6 objects
+#'
+#' @description
+#' Given a table `tab` with list columns of R6 objects, walks over the columns referenced via
+#' `cols` and replaces R6 objects with the string of their respective hash.
+#' The replaced objects are returned in a nested list.
+#'
+#' This operation can be reversed with the [dilute()] function.
+#'
+#' @param tab (`data.table()`)\cr
+#'   Table with list columns of R6 objects.
+#' @param cols (`character()`)\cr
+#'   Subset of columns of `tab`.
+#'
+#' @return (named `list()`).
+#' Named list of named lists of distinct extracted R6 objects.
+#' First level is named after column names, second level after hash strings.
+#'
+#' @noRd
+concentrate = function(tab, cols) {
+  objects = named_list(cols)
+  for (col in cols) {
+    values = tab[[col]]
+    hashes = hashes(values)
+    uniq = !duplicated(hashes)
+    objects[[col]] = setNames(values[uniq], hashes[uniq])
+    set(tab, j = col, value = hashes)
+  }
+
+  objects # tab is changed in-place
+}
+
+#' Dilute a table with R6 objects
+#'
+#' @description
+#' Given a table `tab` with columns of R6 hashes and a named list `objects` of R6 objects,
+#' replaces the hashes with the corresponding R6 object.
+#'
+#' This operation reverses the [concentrate()] function.
+#'
+#' @param tab (`data.table()`)\cr
+#'   Table with character columns of R6 hashes.
+#' @param objects (named `list()`)\cr
+#'   List as returned by [concentrate()].
+#'
+#' @return (`data.table()`).
+#' Hashes are replaced by the corresponding R6 objects.
+#'
+#' @noRd
+dilute = function(tab, objects) {
+  for (col in names(objects)) {
+    values = objects[[col]]
+    set(tab, j = col, value = values[tab[[col]]])
+  }
+  tab
+}
